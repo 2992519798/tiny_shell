@@ -13,7 +13,6 @@ enum Cmd_type_t {
     CMD_BACK,
     CMD_PIPE,
     CMD_REDIR,
-    CMD_REDIR_INPUT,
     CMD_SEQ,
 };
 
@@ -65,15 +64,6 @@ struct Cmd_Redir{
     int fd;
 };
 Cmd_t Cmd_Redir_new(Cmd_t left, Cmd_t right, int fd);
-
-typedef struct Cmd_Redir_input *Cmd_Redir_input;
-struct Cmd_Redir_input{
-    enum Cmd_type_t type;
-    Cmd_t left;
-    Cmd_t right;
-    int fd;
-};
-Cmd_t Cmd_Redir_input_new(Cmd_t left, Cmd_t right, int fd);
 
 // print AST
 void Cmd_print(Cmd_t cmd);

@@ -68,15 +68,6 @@ Cmd_t Cmd_Redir_new(Cmd_t left, Cmd_t right, int fd){
     return (Cmd_t)cmd;
 }
 
-Cmd_t Cmd_Redir_input_new(Cmd_t left, Cmd_t right, int fd) {
-    Cmd_Redir_input cmd;
-    NEW(cmd);
-    cmd->type = CMD_REDIR_INPUT;
-    cmd->left = left;
-    cmd->right = right;
-    cmd->fd = fd;
-    return (Cmd_t)cmd;
-}
 
 Cmd_t Cmd_Atom_new(struct node *node){
     Cmd_Atom cmd;
@@ -147,21 +138,17 @@ void Cmd_print(struct Cmd_t *cmd){
             struct Cmd_Redir *t = (struct Cmd_Redir *)cmd;
             Cmd_t left = t->left;
             Cmd_t right = t->right;
+            int fd = t->fd;
             Cmd_print(left);
-            printf("> ");
+            if (fd == 0) {
+                printf("< ");
+            } else {
+                printf("> ");
+            }
             Cmd_print(right);
             break;
         }
 
-        case CMD_REDIR_INPUT: {
-            struct Cmd_Redir_input *t = (struct Cmd_Redir_input *)cmd;
-            Cmd_t left = t->left;
-            Cmd_t right = t->right;
-            Cmd_print(left);
-            printf("< ");
-            Cmd_print(right);
-            break;
-        }
         default:
             break;
     }
@@ -259,76 +246,66 @@ void Cmd_run(struct Cmd_t *cmd){
                 struct Cmd_Redir *t = (struct Cmd_Redir *)cmd;
                 Cmd_t left = t->left;
                 Cmd_t right = t->right;
-                int fd_right;
-                int p[2];
-                pipe(p);
-                if (fork() == 0) {
-                    close(p[0]);
-                    dup2(p[1], 1);
-                    close(p[1]);
-                    Cmd_run(left);
-                } else {
-                    wait(0);
-                    close(p[1]);
-                    Cmd_Atom file = (Cmd_Atom)(t->right);
-                    char *filename = file->node->data;
-                    fd_right = open(filename, O_RDWR | O_TRUNC | O_CREAT, 0666);
-                    char buf[512] = {0};
-                    int n = read(p[0], buf, 512);
-                    if (n == -1) {
-                        perror("read");
-                        exit(1);
-                    } else {
-                        int written_num = write(fd_right, buf, n);
-                        if (written_num == -1) {
-                            perror("write");
-                            exit(0);
-                        }
-                    }
-                    close(p[0]);
-                    close(fd_right);
-                }
-                break;
-            }
-
-            /*
-             * challenge: Implement the input redirection.
-             */
-            case CMD_REDIR_INPUT: {
-                struct Cmd_Redir_input *t = (struct Cmd_Redir_input *)cmd;
-                Cmd_t left = t->left;
-                Cmd_t right = t->right;
-                int p[2];
-                pipe(p);
+                int fd = t->fd;
                 Cmd_Atom file = (Cmd_Atom)(t->right);
                 char *filename = file->node->data;
-                int fd_right = open(filename, O_RDONLY);
-                if (fd_right == -1) {
-                    perror("No such file in '<' operation \n");
-                    exit(1);
+                int p[2];
+                pipe(p);
+                if (fd == 1) {
+                    if (fork() == 0) {
+                        close(p[0]);
+                        dup2(p[1], 1);
+                        close(p[1]);
+                        Cmd_run(left);
+                    } else {
+                        wait(0);
+                        close(p[1]);
+                        int fd_right = open(filename, O_RDWR | O_TRUNC | O_CREAT, 0666);
+                        char buf[512] = {0};
+                        int n = read(p[0], buf, 512);
+                        if (n == -1) {
+                            perror("read error");
+                            exit(1);
+                        } else {
+                            int written_num = write(fd_right, buf, n);
+                            if (written_num == -1) {
+                                perror("write error");
+                                exit(0);
+                            }
+                        }
+                        close(p[0]);
+                        close(fd_right);
+                    }
+                    break;
+                } else if (fd == 0){
+                    int fd_right = open(filename, O_RDONLY);
+                    if (fd_right == -1) {
+                        perror("No such file in '<' operation \n");
+                        exit(1);
+                    }
+                    char buf[512] = {0};
+                    int n = read(fd_right, buf, 512);
+                    if (n == -1) {
+                        perror("read error");
+                        exit(1);
+                    }
+                    int written_num = write(p[1], buf, n);
+                    if (written_num == -1) {
+                        perror("write error");
+                        exit(1);
+                    }
+                    if (fork() == 0) {
+                        close(p[1]);
+                        dup2(p[0], 0);
+                        close(p[0]);
+                        Cmd_run(left);
+                    } else {
+                        close(p[0]);
+                        close(p[1]);
+                    }
+                    close(fd_right);
+                    break;
                 }
-                char buf[512] = {0};
-                int n = read(fd_right, buf, 512);
-                if (n == -1) {
-                    perror("read");
-                    exit(1);
-                }
-                int written_num = write(p[1], buf, n);
-                if (written_num == -1) {
-                    perror("write");
-                    exit(1);
-                }
-                if (fork() == 0) {
-                    close(p[1]);
-                    dup2(p[0], 0);
-                    close(p[0]);
-                    Cmd_run(left);
-                } else {
-                    close(p[0]);
-                    close(p[1]);
-                }
-                close(fd_right);
-                break;
             }
             default:
                 break;
